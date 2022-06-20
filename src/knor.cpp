@@ -1465,6 +1465,10 @@ handleOptions(int &argc, char**& argv)
     }
 }
 
+/**
+ * Start of added code (part 1) (part 2 can be found near line 2000)
+ */
+
 struct sig_part {
     std::vector<int> value;
     uint32_t level;
@@ -1485,32 +1489,6 @@ struct path_part {
     uint32_t var;
 };
 
-//uint32_t
-//getMaxVar(MTBDD bdd) {
-//    MTBDD low = mtbdd_getlow(bdd);
-//    MTBDD high = mtbdd_gethigh(bdd);
-//    uint32_t low_var = 0;
-//    uint32_t high_var = 0;
-//    if (low != sylvan_false) {
-//        if (low == sylvan_true) {
-//            low_var = mtbdd_getvar(bdd);
-//        } else {
-//            low_var = getMaxVar(low);
-//        }
-//    }
-//    if (high != sylvan_false) {
-//        if (high == sylvan_true) {
-//            high_var = mtbdd_getvar(bdd);
-//        } else {
-//            high_var = getMaxVar(high);
-//        }
-//    }
-//    if (low_var < high_var) {
-//        return high_var;
-//    } else {
-//        return low_var;
-//    }
-//}
 
 std::map<std::vector<bool>, MTBDD> getStatesList(MTBDD& bdd, uint32_t state_bits, std::vector<bool> curpath, uint32_t offset) {
     std::map<std::vector<bool>, MTBDD> result;
@@ -1548,46 +1526,6 @@ std::map<std::vector<bool>, MTBDD> getStatesList(MTBDD& bdd, uint32_t state_bits
     }
     return result;
 }
-
-
-
-//std::vector<std::vector<bool>>
-//get_true_paths(MTBDD bdd, uint32_t state_bits, std::vector<bool> curpath) {
-//    std::vector<std::vector<bool>> result;
-//    MTBDD low = mtbdd_getlow(bdd);
-//    MTBDD high = mtbdd_gethigh(bdd);
-//    if (low != sylvan_false) {
-//        uint32_t low_var = mtbdd_getvar(low);
-//        if (low_var < state_bits) {
-//            // Still in the state bdd part
-//            curpath.push_back(false);
-//            std::vector<std::vector<bool>> low_res = get_true_paths(low, state_bits, curpath);
-//            result.insert(result.end(), low_res.begin(), low_res.end());
-//            curpath.pop_back();
-//        } else {
-//            // The BDD is now the BDD of a single state
-//            curpath.push_back(false);
-//            result.push_back(curpath);
-//            curpath.pop_back();
-//        }
-//    }
-//    if (high != sylvan_false) {
-//        uint32_t high_var = mtbdd_getvar(high);
-//        if (high_var < state_bits) {
-//            // Still in the state bdd part
-//            curpath.push_back(true);
-//            std::vector<std::vector<bool>> high_res = get_true_paths(high, state_bits, curpath);
-//            result.insert(result.end(), high_res.begin(), high_res.end());
-//            curpath.pop_back();
-//        } else {
-//            // The BDD is now the BDD of a single state
-//            curpath.push_back(true);
-//            result.push_back(curpath);
-//            curpath.pop_back();
-//        }
-//    }
-//    return result;
-//}
 
 bool
 path_findable(std::vector<bool> pattern, std::vector<bool> instance) {
@@ -1874,6 +1812,10 @@ minimiseBDD(SymGame sym) {
     outputfile.close();
 }
 
+/**
+ * End of added code (part 1)
+ */
+
 
 /**
  * The main function
@@ -2057,7 +1999,12 @@ main(int argc, char* argv[])
 
         if (verbose) sylvan_stats_report(stdout);
 
+
+
         if (res) {
+            /**
+             * Start of added code (part 2) (part 1 can be found near line 1470)
+             */
             if (options["bisim-min"].count() > 0) {
                 std::ofstream outputfile;
                 outputfile.open("bisim_min_data.csv", std::ios_base::app);
@@ -2066,6 +2013,10 @@ main(int argc, char* argv[])
                 minimiseBDD(sym);
                 exit(10);
             }
+            /**
+             * End of added code (part 2)
+             */
+
 
 
             /** 
