@@ -1529,14 +1529,19 @@ std::map<std::vector<bool>, MTBDD> getStatesList(MTBDD& bdd, uint32_t state_bits
 
 bool
 path_findable(std::vector<bool> pattern, std::vector<bool> instance) {
+    // Check if the instance matches the pattern
+    // If a path to next_state equals the pattern that is taken in the trans relation then these states are the same
     if (instance.size() < pattern.size()) {
+        // instance cannot match pattern if instance is smaller
         return false;
     }
     for (int i = 0; i < (int) pattern.size(); i++) {
         if (pattern[i] != instance[i]) {
+            // instance does not match pattern
             return false;
         }
     }
+    // All values in pattern also exist in instance. States match
     return true;
 }
 
@@ -1553,11 +1558,11 @@ current_in_path(MTBDD current, const std::vector<path_part>& path, uint32_t offs
 
 std::vector<int>
 get_trans_block(std::vector<std::vector<std::vector<bool>>> blocks, SymGame sym, std::vector<path_part> path, uint32_t offset_strat, const std::vector<bool>& state_path) {
-    // Try to retrace our steps in trans. Start by retracing the path of the state and the uap and cap taken.
+    // Retrace our steps in trans.
     MTBDD current = sym.trans;
     uint32_t offset_trans = mtbdd_getvar(current);
 
-
+    // First follow the state_path that is taken
     for(auto && i : state_path) {
         if (i) {
             current = mtbdd_gethigh(current);
@@ -1566,43 +1571,56 @@ get_trans_block(std::vector<std::vector<std::vector<bool>>> blocks, SymGame sym,
         }
     }
 
+    // Use a queue to go through the trans tree
+    // If during the UAP or CAP layer a certain edge was followed at var then also take that edge
+    // Else just take both edges and add them to the queue
+    // Continue till the next_state layer is reached
     std::vector<MTBDD> queue = {current};
     std::vector<MTBDD> next_states_bdd;
-    uint32_t at_prio_bits = sym.statebits + sym.cap_count + sym.uap_count + offset_trans;
-    uint32_t at_next_state = at_prio_bits + sym.priobits;
+    uint32_t at_next_state = sym.statebits + sym.cap_count + sym.uap_count + offset_trans + sym.priobits;
     while (!queue.empty()) {
         current = queue[0];
         int index = current_in_path(current, path, offset_trans, offset_strat);
         if (index != -1) {
+            // A decision is recorded
             if (path[index].value) {
+                // Follow high edge
                 MTBDD high = mtbdd_gethigh(current);
                 uint32_t high_var = mtbdd_getvar(high);
                 if (high_var >= at_next_state) {
+                    // Fallen through priority part so add this to the next_states_bdd instead of the queue
                     next_states_bdd.push_back(high);
                 } else {
                     queue.push_back(high);
                 }
             } else {
+                // Follow low edge
                 MTBDD low = mtbdd_getlow(current);
                 uint32_t low_var = mtbdd_getvar(low);
                 if (low_var >= at_next_state) {
+                    // Fallen through priority part so add this to the next_states_bdd instead of the queue
                     next_states_bdd.push_back(low);
                 } else {
                     queue.push_back(low);
                 }
             }
         } else {
+            // No decision recorded: follow both edges
             MTBDD low = mtbdd_getlow(current);
             MTBDD high = mtbdd_gethigh(current);
             if (low != sylvan_false) {
+                // No terminal so add the low bdd
                 if (mtbdd_getvar(low) >= at_next_state) {
+                    // Fallen through priority part so add this to the next_states_bdd instead of the queue
                     next_states_bdd.push_back(low);
                 } else {
                     queue.push_back(low);
                 }
             }
             if (high != sylvan_false) {
+                // No terminal so add the high bdd
                 if (mtbdd_getvar(high) >= at_next_state) {
+                    // Fallen through priority part so add this to the next_states_bdd instead of the queue
                     next_states_bdd.push_back(high);
                 } else {
                     queue.push_back(high);
@@ -1612,14 +1630,7 @@ get_trans_block(std::vector<std::vector<std::vector<bool>>> blocks, SymGame sym,
         queue.erase(queue.begin());
     }
 
-    if (next_states_bdd.empty()) {
-        std::cout << "Well shit (3)" << std::endl;
-        std::ofstream outputfile;
-        outputfile.open("bisim_min_data.csv", std::ios_base::app);
-        outputfile << "\n";
-        outputfile.close();
-        exit(3);
-    }
+    // Remove copies of BDD's
     if (next_states_bdd.size() > 1) {
         sort(next_states_bdd.begin(), next_states_bdd.end() );
         next_states_bdd.erase( unique(next_states_bdd.begin(), next_states_bdd.end()), next_states_bdd.end());
@@ -1635,40 +1646,35 @@ get_trans_block(std::vector<std::vector<std::vector<bool>>> blocks, SymGame sym,
             MTBDD low = mtbdd_getlow(current);
             MTBDD high = mtbdd_gethigh(current);
             if (low == sylvan_false) {
-                if (high == sylvan_false) {
-                    std::cout << "Well shit (5)";
-                }
+                // low is a terminal so follow high edge
                 current = high;
                 uint32_t cur_var = mtbdd_getvar(high);
-                if (cur_var != prev_var + 1 && i + 1 != sym.statebits) {
-                    std::cout << "well shit (7)";
-                }
                 next_state.push_back(true);
             } else {
-                if (high != sylvan_false) {
-                    std::cout << "Well shit (6)";
-                }
+                // low is no terminal (and high is a terminal) so follow low edge
                 current = low;
                 uint32_t cur_var = mtbdd_getvar(low);
-                if (cur_var != prev_var + 1 && i + 1 != sym.statebits) {
-                    std::cout << "well shit (7)";
-                }
                 next_state.push_back(false);
             }
         }
         next_states.push_back(next_state);
     }
+    // Remove duplicate state paths
     sort(next_states.begin(), next_states.end() );
     next_states.erase( unique(next_states.begin(), next_states.end()), next_states.end());
+
     std::vector<int> result;
     for (const std::vector<bool>& next_state : next_states) {
         for (size_t i = 0; i < blocks.size(); i++) {
             auto it = std::find(result.begin(), result.end(), i);
             if (it != result.end()) {
+                // Block number is already recorded in result so continue to next next_state
                 continue;
             }
+            // Block number is not yet recorded. See if this next_state belongs to this block
             for (auto &state: blocks[i]) {
                 if (path_findable(state, next_state)) {
+                    // This next_state belongs to this block. Record block number
                     result.push_back((int) i);
                     break;
                 }
@@ -1681,29 +1687,36 @@ get_trans_block(std::vector<std::vector<std::vector<bool>>> blocks, SymGame sym,
 
 std::vector<sig_part>
 computeSignature (MTBDD bdd, SymGame sym, const std::vector<std::vector<std::vector<bool>>>& blocks, std::vector<path_part> curpath, uint32_t offset, const std::vector<bool>& state_path) {
+    // Find where the signature ends in the BDD
     uint32_t signature_level = sym.statebits + sym.cap_count + sym.uap_count;
     uint32_t cur_var = mtbdd_getvar(bdd);
     MTBDD low = mtbdd_getlow(bdd);
     MTBDD high = mtbdd_gethigh(bdd);
     std::vector<sig_part> result;
     if (low == sylvan_false || low == sylvan_true) {
+        // Terminal is reached
         sig_part low_sig{std::vector<int>(), cur_var};
         if (low == sylvan_false) {
+            // Record false terminal
             low_sig.value = std::vector<int>(1, -1);
         } else {
+            // True terminal: find out to what block it will transition
             low_sig.value = get_trans_block(blocks, sym, curpath, offset, state_path);
         }
         result.push_back(low_sig);
     } else if (mtbdd_getvar(low) >= signature_level + offset) {
+        // Fallen through CAP and UAP part. Find out what to what block it will transition
         sig_part low_sig{get_trans_block(blocks, sym, curpath, offset, state_path), cur_var};
         result.push_back(low_sig);
     } else {
+        // No terminal: dig deeper into BDD
         curpath.push_back(path_part{false, cur_var});
         std::vector<sig_part> low_sig = computeSignature(low, sym, blocks, curpath, offset, state_path);
         result.insert(result.end(), low_sig.begin(), low_sig.end());
         curpath.pop_back();
     }
 
+    // The same logic that the low edge does also applies for the high part
     if (high == sylvan_false || high == sylvan_true) {
         sig_part high_sig{std::vector<int>(), cur_var};
         if (high == sylvan_false) {
@@ -1732,12 +1745,10 @@ minimiseBDD(SymGame sym) {
     // Initialisation phase
     size_t no_blocks = 1, no_old_blocks = 0;
     uint32_t offset = mtbdd_getvar(sym.strategies);
-
-
     std::vector<bool> empty_path;
 
+    //Go through the tree to get all the nodes where the states layer has ended
     std::map<std::vector<bool>, MTBDD> path_states_map = getStatesList(sym.strategies, sym.statebits, empty_path, offset);
-
     std::vector<std::vector<bool>> state_paths;
     std::vector<MTBDD> states_bdds;
     for(auto & it : path_states_map) {
@@ -1750,6 +1761,7 @@ minimiseBDD(SymGame sym) {
     // Every state belongs to the same block
     blocks.push_back(state_paths);
 
+    // Writing will be done to new_blocks and reading will be done to blocks
     std::vector<std::vector<std::vector<bool>>> new_blocks;
 
     // main process
@@ -1759,6 +1771,7 @@ minimiseBDD(SymGame sym) {
 
         // For each block:
         for(size_t i = 0; i < blocks.size(); i++) {
+            // Reset known signatures for this block
             std::vector<std::vector<sig_part>> known_signatures;
             std::map<std::vector<sig_part>, size_t> sig_block_map;
 
@@ -1770,8 +1783,10 @@ minimiseBDD(SymGame sym) {
                 // Try to find block belonging to signature
                 auto it = std::find(known_signatures.begin(), known_signatures.end(), signature);
                 if (it != known_signatures.end()) {
+                    // Signature is found
                     if (it != known_signatures.begin()) {
-                        // move state to new block
+                        // Signature is not belonging to the first block so this state belongs to a newly created block
+                        // Move state to new block
                         size_t new_index = sig_block_map[signature];
                         new_blocks[new_index].push_back(blocks[i][j]);
                         auto it2 = std::find(new_blocks[i].begin(), new_blocks[i].end(), blocks[i][j]);
@@ -1780,18 +1795,22 @@ minimiseBDD(SymGame sym) {
                         }
                     }
                 } else if (known_signatures.empty()) {
+                    // First state belongs to the block number that already exists
                     sig_block_map.insert(std::make_pair(signature, i));
                     known_signatures.push_back(signature);
                 } else {
-                    // add signature to list
+                    // New signature is found
                     // add new block with current state
                     size_t block_number = new_blocks.size();
                     std::vector<std::vector<bool>> new_block;
                     new_block.push_back(blocks[i][j]);
                     new_blocks.push_back(new_block);
+
+                    // add signature to list
                     sig_block_map.insert(std::make_pair(signature, block_number));
                     known_signatures.push_back(signature);
-                    // TODO: simplify in function
+
+                    // Remove state from former block
                     auto it2 = std::find(new_blocks[i].begin(), new_blocks[i].end(), blocks[i][j]);
                     if (it2 != new_blocks[i].end()) {
                         new_blocks[i].erase(it2);
@@ -1799,9 +1818,11 @@ minimiseBDD(SymGame sym) {
                 }
             }
         }
+        // Update blocks and no_blocks
         blocks = new_blocks;
         no_blocks = blocks.size();
     }
+    // Write results to csv file
     std::ofstream outputfile;
     outputfile.open("bisim_min_data.csv", std::ios_base::app);
     outputfile << states_bdds.size() << "," << no_blocks;
@@ -2006,10 +2027,12 @@ main(int argc, char* argv[])
              * Start of added code (part 2) (part 1 can be found near line 1470)
              */
             if (options["bisim-min"].count() > 0) {
+                // The number of states is actually not used anywhere in the paper or the processing of data
                 std::ofstream outputfile;
                 outputfile.open("bisim_min_data.csv", std::ios_base::app);
                 outputfile << data->noStates << ",";
                 outputfile.close();
+
                 minimiseBDD(sym);
                 exit(10);
             }
